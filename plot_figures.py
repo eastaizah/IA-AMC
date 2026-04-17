@@ -2,16 +2,6 @@
 """
 plot_figures.py — Generate all article figures from benchmark results.
 
-Figures:
-  Fig. 1: (described only — OODA cognitive cycle diagram)
-  Fig. 2: Constellation diagrams for evaluated modulations
-  Fig. 3: (described only — CNN architecture block diagram)
-  Fig. 4: (described only — MS-SENet architecture block diagram)
-  Fig. 5: Accuracy vs. SNR curves for all architectures
-  Fig. 6: Normalized confusion matrix for MS-SENet at SNR=10 dB
-  Fig. 7: Multi-dimensional radar chart comparison
-  Fig. 8: t-SNE visualization of learned representations
-
 Usage:
     python plot_figures.py --results-dir results --output-dir ../figures
     python plot_figures.py --self-test
@@ -117,11 +107,11 @@ def plot_constellations(output_dir):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Figure 5: Accuracy vs. SNR
+# Figure 4: Accuracy vs. SNR
 # ═══════════════════════════════════════════════════════════════════════════
 
 def plot_accuracy_vs_snr(results_dir, output_dir):
-    """Fig. 5: Classification accuracy vs. SNR for all architectures."""
+    """Fig. 4: Classification accuracy vs. SNR for all architectures."""
     summary_path = os.path.join(results_dir, "benchmark_summary.json")
     if not os.path.exists(summary_path):
         print(f"  [SKIP] {summary_path} not found")
@@ -174,11 +164,11 @@ def plot_accuracy_vs_snr(results_dir, output_dir):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Figure 6: Confusion matrix
+# Figure 5: Confusion matrix
 # ═══════════════════════════════════════════════════════════════════════════
 
 def plot_confusion_matrix(results_dir, output_dir, model_name="MS-SENet"):
-    """Fig. 6: Normalized confusion matrix."""
+    """Fig. 5: Normalized confusion matrix."""
     res_path = os.path.join(results_dir,
                             f"{model_name.replace(' ', '_')}.json")
     if not os.path.exists(res_path):
@@ -221,107 +211,11 @@ def plot_confusion_matrix(results_dir, output_dir, model_name="MS-SENet"):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Figure 7: Radar chart
-# ═══════════════════════════════════════════════════════════════════════════
-
-def plot_radar_chart(results_dir, output_dir):
-    """Fig. 7: Multi-dimensional radar chart comparison."""
-    summary_path = os.path.join(results_dir, "benchmark_summary.json")
-    if not os.path.exists(summary_path):
-        print(f"  [SKIP] {summary_path} not found")
-        return
-
-    with open(summary_path) as f:
-        summary = json.load(f)
-
-    dimensions = [
-        "Accuracy", "Low-SNR\nRobustness", "Latency\nEfficiency",
-        "Memory\nEfficiency", "Parameter\nEfficiency", "Generalization"
-    ]
-
-    models_to_plot = [m for m in ["CNN-4Layer", "LSTM-2Layer", "CNN-LSTM",
-                                   "ResNet-LSTM", "MS-SENet"]
-                      if m in summary["models"]]
-
-    radar_colors = {
-        "CNN-4Layer":  "#C0C0C0",
-        "LSTM-2Layer": "#4682B4",
-        "CNN-LSTM":    "#32CD32",
-        "ResNet-LSTM": "#FF8C00",
-        "MS-SENet":    "#FF0000",
-    }
-
-    # Compute raw values
-    raw = {}
-    for m in models_to_plot:
-        ps = summary["per_snr"][m]
-        snrs_float = {float(k): v for k, v in ps.items()}
-        low_snr = np.mean([v for k, v in snrs_float.items() if k < 0])
-        avg_acc = np.mean(list(snrs_float.values()))
-
-        lat = summary["latency"].get(m, 1.0)
-        mem_info = summary["memory"].get(m, {})
-        params_k = mem_info.get("parameters_K", 100)
-        gpu_mem = mem_info.get("gpu_memory_MB", 10)
-
-        # Generalization = robustness to channel mismatch
-        rob = summary.get("robustness", {}).get(m, {})
-        ray_acc = rob.get("rayleigh_snr10_acc", avg_acc * 0.8)
-
-        raw[m] = [avg_acc, low_snr, lat, gpu_mem, params_k, ray_acc]
-
-    # Normalize to [0, 1] — higher is better
-    all_vals = np.array(list(raw.values()))
-    mins = all_vals.min(axis=0)
-    maxs = all_vals.max(axis=0)
-    rng = maxs - mins
-    rng[rng == 0] = 1
-
-    norm = {}
-    for m in models_to_plot:
-        v = np.array(raw[m])
-        n = (v - mins) / rng
-        # Invert latency, memory, params (lower is better)
-        n[2] = 1 - n[2]
-        n[3] = 1 - n[3]
-        n[4] = 1 - n[4]
-        norm[m] = n.tolist()
-
-    # Plot
-    N = len(dimensions)
-    angles = np.linspace(0, 2 * np.pi, N, endpoint=False).tolist()
-    angles += angles[:1]
-
-    fig, ax = plt.subplots(figsize=(8, 8), subplot_kw=dict(polar=True))
-
-    for i, m in enumerate(models_to_plot):
-        vals = norm[m] + [norm[m][0]]
-        c = radar_colors.get(m, plt.cm.tab10(i / len(models_to_plot)))
-        lw = 2.5 if m == "MS-SENet" else 1.5
-        ax.plot(angles, vals, "o-", linewidth=lw, markersize=4,
-                label=m, color=c)
-        ax.fill(angles, vals, alpha=0.05, color=c)
-
-    ax.set_xticks(angles[:-1])
-    ax.set_xticklabels(dimensions, fontsize=8)
-    ax.set_ylim(0, 1.1)
-    ax.set_title("Fig. 7. Multi-dimensional comparison of DL-AMC architectures",
-                 y=1.08)
-    ax.legend(loc="upper right", bbox_to_anchor=(1.3, 1.1), fontsize=7)
-
-    plt.tight_layout()
-    path = os.path.join(output_dir, "fig7_radar_chart.png")
-    fig.savefig(path, bbox_inches='tight')
-    plt.close(fig)
-    print(f"  Saved {path}")
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Figure 8: t-SNE visualization
+# Figure 6: t-SNE visualization
 # ═══════════════════════════════════════════════════════════════════════════
 
 def plot_tsne(results_dir, output_dir):
-    """Fig. 8: t-SNE of learned representations — 3 architectures × 2 SNR levels."""
+    """Fig. 6: t-SNE of learned representations — 3 architectures × 2 SNR levels."""
     try:
         from sklearn.manifold import TSNE
     except ImportError:
@@ -401,7 +295,6 @@ def generate_all_figures(results_dir="results", output_dir="../figures"):
     plot_constellations(output_dir)
     plot_accuracy_vs_snr(results_dir, output_dir)
     plot_confusion_matrix(results_dir, output_dir)
-    plot_radar_chart(results_dir, output_dir)
     plot_tsne(results_dir, output_dir)
     print("All figures generated ✓")
 
